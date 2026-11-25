@@ -1,0 +1,1317 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Safari Precision Hunter</title>
+    <!-- Tailwind CSS for crisp, responsive UI -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Tone.js for procedural sound synthesis (gunshots, reloads, wind, chimes) -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@700;900&family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #141210;
+            color: #f3f4f6;
+            overflow: hidden;
+            user-select: none;
+            -webkit-user-select: none;
+            touch-action: none;
+        }
+        .title-font {
+            font-family: 'Cinzel', serif;
+        }
+        #game-wrapper {
+            position: relative;
+            width: 100%;
+            max-width: 1100px;
+            aspect-ratio: 16 / 9;
+            max-height: 75vh;
+            border-radius: 16px;
+            overflow: hidden;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.8), 0 0 0 2px rgba(217, 119, 6, 0.4);
+            background: #2b1d12;
+        }
+        canvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+            cursor: none;
+        }
+        /* Custom tactile buttons */
+        .game-btn {
+            background: linear-gradient(180deg, #f59e0b 0%, #b45309 100%);
+            border: 1px solid #fcd34d;
+            box-shadow: 0 4px 14px rgba(245, 158, 11, 0.4), inset 0 1px 0 rgba(255,255,255,0.4);
+            transition: all 0.15s ease;
+        }
+        .game-btn:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(245, 158, 11, 0.6), inset 0 1px 0 rgba(255,255,255,0.5);
+            filter: brightness(1.08);
+        }
+        .game-btn:active:not(:disabled) {
+            transform: translateY(1px);
+        }
+        .game-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        .secondary-btn {
+            background: linear-gradient(180deg, #374151 0%, #1f2937 100%);
+            border: 1px solid #6b7280;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+            transition: all 0.15s ease;
+        }
+        .secondary-btn:hover {
+            background: linear-gradient(180deg, #4b5563 0%, #374151 100%);
+            transform: translateY(-1px);
+        }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col items-center justify-between p-2 sm:p-4">
+
+    <!-- Top Header & HUD -->
+    <header class="w-full max-w-[1100px] flex flex-wrap items-center justify-between gap-2 bg-stone-900/90 border border-amber-700/40 rounded-xl px-4 py-2.5 shadow-lg backdrop-blur-sm">
+        <div class="flex items-center gap-3">
+            <div class="w-9 h-9 rounded-lg bg-amber-600/20 border border-amber-500/50 flex items-center justify-center text-amber-400">
+                <!-- Crosshair SVG Icon -->
+                <svg class="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="12" cy="12" r="9"/>
+                    <line x1="12" y1="1" x2="12" y2="6"/>
+                    <line x1="12" y1="18" x2="12" y2="23"/>
+                    <line x1="1" y1="12" x2="6" y2="12"/>
+                    <line x1="18" y1="12" x2="23" y2="12"/>
+                </svg>
+            </div>
+            <div>
+                <h1 class="title-font text-base sm:text-xl font-black tracking-wider text-amber-400 leading-none">SAFARI HUNTER</h1>
+                <span class="text-[11px] text-stone-400 uppercase tracking-widest font-semibold">Ballistics & Conservation</span>
+            </div>
+        </div>
+
+        <!-- Live Stats -->
+        <div class="flex items-center gap-3 sm:gap-6 text-sm">
+            <div class="flex flex-col items-center">
+                <span class="text-[10px] uppercase tracking-wider text-stone-400">Score</span>
+                <span id="hud-score" class="font-extrabold text-lg sm:text-xl text-white tabular-nums">0</span>
+            </div>
+            <div class="flex flex-col items-center">
+                <span class="text-[10px] uppercase tracking-wider text-stone-400">Combo</span>
+                <span id="hud-combo" class="font-extrabold text-lg sm:text-xl text-amber-400 tabular-nums">x1.0</span>
+            </div>
+            <div class="flex flex-col items-center">
+                <span class="text-[10px] uppercase tracking-wider text-stone-400">Wind</span>
+                <div class="flex items-center gap-1 font-bold text-sky-300 tabular-nums">
+                    <span id="hud-wind-arrow">→</span>
+                    <span id="hud-wind-val">0 kt</span>
+                </div>
+            </div>
+            <div class="flex flex-col items-center">
+                <span class="text-[10px] uppercase tracking-wider text-stone-400">Time</span>
+                <span id="hud-time" class="font-extrabold text-lg sm:text-xl text-emerald-400 tabular-nums">60s</span>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Game Canvas Container -->
+    <main id="game-wrapper" class="my-2">
+        <canvas id="gameCanvas"></canvas>
+
+        <!-- Start / Rules Overlay -->
+        <div id="start-overlay" class="absolute inset-0 bg-stone-950/85 backdrop-blur-md flex flex-col items-center justify-center p-6 text-center z-20">
+            <h2 class="title-font text-3xl sm:text-5xl font-black text-amber-400 mb-2 drop-shadow">BALLISTIC EXPEDITION</h2>
+            <p class="text-stone-300 max-w-xl text-sm sm:text-base mb-6">
+                Precision marksman challenge. Account for <span class="text-sky-300 font-semibold">wind drift</span>, <span class="text-amber-300 font-semibold">target lead</span>, and <span class="text-rose-400 font-semibold">conservation laws</span>.
+            </p>
+
+            <!-- Rules Grid -->
+            <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 max-w-3xl w-full mb-6 text-left">
+                <div class="bg-stone-900/90 border border-stone-700 p-3.5 rounded-xl">
+                    <div class="text-amber-400 font-bold text-sm mb-1 flex items-center gap-1.5">
+                        <span>🎯</span> Valid Targets
+                    </div>
+                    <p class="text-xs text-stone-300 leading-relaxed">
+                        <strong>Wild Boar (+100)</strong>, <strong>Stag (+150)</strong>, and swift <strong>Pheasant (+250)</strong>. Headshots grant <span class="text-amber-300 font-bold">2x Critical</span> points!
+                    </p>
+                </div>
+                <div class="bg-stone-900/90 border border-rose-800/60 p-3.5 rounded-xl">
+                    <div class="text-rose-400 font-bold text-sm mb-1 flex items-center gap-1.5">
+                        <span>🛡️</span> Protected Species
+                    </div>
+                    <p class="text-xs text-stone-300 leading-relaxed">
+                        <strong>Do NOT shoot Baby Fawns!</strong> Tagged with a green conservation collar. Shooting one deducts <span class="text-rose-400 font-bold">-300 pts</span> & resets your combo.
+                    </p>
+                </div>
+                <div class="bg-stone-900/90 border border-sky-800/60 p-3.5 rounded-xl">
+                    <div class="text-sky-400 font-bold text-sm mb-1 flex items-center gap-1.5">
+                        <span>💨</span> Physics & Magazine
+                    </div>
+                    <p class="text-xs text-stone-300 leading-relaxed">
+                        Your rifle holds <strong>5 rounds</strong>. Press <strong>R</strong> or click Reload. Watch the wind gauge—bullets drift horizontally over distance!
+                    </p>
+                </div>
+            </div>
+
+            <button id="btn-start" class="game-btn px-8 py-3.5 rounded-xl font-extrabold text-stone-950 text-lg tracking-wide uppercase cursor-pointer">
+                Enter Hunting Grounds
+            </button>
+        </div>
+
+        <!-- Game Over Overlay -->
+        <div id="gameover-overlay" class="hidden absolute inset-0 bg-stone-950/90 backdrop-blur-md flex flex-col items-center justify-center p-6 text-center z-20">
+            <span class="text-xs uppercase tracking-widest text-amber-400 font-bold mb-1">Expedition Complete</span>
+            <h2 class="title-font text-3xl sm:text-5xl font-black text-white mb-4">FINAL REPORT</h2>
+
+            <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 max-w-2xl w-full mb-6">
+                <div class="bg-stone-900 border border-stone-700 p-3 rounded-xl">
+                    <div class="text-xs text-stone-400">Final Score</div>
+                    <div id="end-score" class="text-2xl font-black text-amber-400">0</div>
+                </div>
+                <div class="bg-stone-900 border border-stone-700 p-3 rounded-xl">
+                    <div class="text-xs text-stone-400">Accuracy</div>
+                    <div id="end-accuracy" class="text-2xl font-black text-emerald-400">0%</div>
+                </div>
+                <div class="bg-stone-900 border border-stone-700 p-3 rounded-xl">
+                    <div class="text-xs text-stone-400">Criticals</div>
+                    <div id="end-crits" class="text-2xl font-black text-sky-400">0</div>
+                </div>
+                <div class="bg-stone-900 border border-stone-700 p-3 rounded-xl">
+                    <div class="text-xs text-stone-400">Penalties</div>
+                    <div id="end-penalties" class="text-2xl font-black text-rose-400">0</div>
+                </div>
+            </div>
+
+            <button id="btn-restart" class="game-btn px-8 py-3.5 rounded-xl font-extrabold text-stone-950 text-lg tracking-wide uppercase cursor-pointer">
+                Hunt Again
+            </button>
+        </div>
+    </main>
+
+    <!-- Bottom Controls Bar (Outside Canvas as required) -->
+    <footer class="w-full max-w-[1100px] flex flex-wrap items-center justify-between gap-3 bg-stone-900/90 border border-stone-700/70 rounded-xl px-4 py-2.5 shadow-lg">
+        <!-- Magazine / Ammo Display -->
+        <div class="flex items-center gap-3">
+            <span class="text-xs uppercase tracking-wider text-stone-400 font-bold">Magazine:</span>
+            <div id="ammo-container" class="flex items-center gap-1.5">
+                <!-- Shells rendered by JS -->
+            </div>
+            <span id="reload-status" class="text-xs font-bold text-amber-400 hidden animate-pulse">RELOADING...</span>
+        </div>
+
+        <!-- Action Buttons -->
+        <div class="flex items-center gap-2 sm:gap-3">
+            <button id="btn-reload" class="secondary-btn px-4 py-2 rounded-lg text-xs sm:text-sm font-bold text-white flex items-center gap-1.5 cursor-pointer">
+                <span>🔄</span> Reload <span class="hidden sm:inline text-stone-400">[R]</span>
+            </button>
+            <button id="btn-scope" class="secondary-btn px-4 py-2 rounded-lg text-xs sm:text-sm font-bold text-amber-300 flex items-center gap-1.5 cursor-pointer">
+                <span>🔭</span> Focus <span class="hidden sm:inline text-stone-400">[Shift / Right-Click]</span>
+            </button>
+            <button id="btn-mute" class="secondary-btn px-3 py-2 rounded-lg text-xs sm:text-sm font-bold text-stone-300 cursor-pointer" title="Toggle Sound">
+                🔊
+            </button>
+        </div>
+    </footer>
+
+    <script>
+        /**
+         * SAFARI PRECISION HUNTER
+         * Complete 2D Ballistic Hunting Game with Procedural Vector Graphics & Tone.js Audio
+         */
+
+        // ==========================================
+        // 1. AUDIO SYNTHESIZER (Tone.js)
+        // ==========================================
+        class SoundEngine {
+            constructor() {
+                this.muted = false;
+                this.initialized = false;
+            }
+
+            async init() {
+                if (this.initialized) return;
+                try {
+                    await Tone.start();
+                    // Gunshot noise + low punch
+                    this.noiseSynth = new Tone.NoiseSynth({
+                        noise: { type: 'white' },
+                        envelope: { attack: 0.002, decay: 0.28, sustain: 0, release: 0.1 }
+                    }).toDestination();
+                    this.noiseSynth.volume.value = -4;
+
+                    this.bassPunch = new Tone.MembraneSynth({
+                        pitchDecay: 0.05,
+                        octaves: 4,
+                        envelope: { attack: 0.001, decay: 0.25, sustain: 0 }
+                    }).toDestination();
+                    this.bassPunch.volume.value = -2;
+
+                    // Metallic click / reload
+                    this.clickSynth = new Tone.MetalSynth({
+                        frequency: 320,
+                        envelope: { attack: 0.001, decay: 0.08, release: 0.02 },
+                        harmonicity: 5.1,
+                        modulationIndex: 16,
+                        resonance: 4000,
+                        octaves: 1.5
+                    }).toDestination();
+                    this.clickSynth.volume.value = -12;
+
+                    // Hit / Penalty chimes
+                    this.chimeSynth = new Tone.PolySynth(Tone.Synth, {
+                        oscillator: { type: 'triangle' },
+                        envelope: { attack: 0.01, decay: 0.2, sustain: 0.05, release: 0.3 }
+                    }).toDestination();
+                    this.chimeSynth.volume.value = -8;
+
+                    this.initialized = true;
+                } catch (e) {
+                    console.warn("Audio initialization deferred:", e);
+                }
+            }
+
+            playGunshot() {
+                if (this.muted || !this.initialized) return;
+                this.noiseSynth.triggerAttackRelease("8n");
+                this.bassPunch.triggerAttackRelease("C1", "8n");
+            }
+
+            playDryFire() {
+                if (this.muted || !this.initialized) return;
+                this.clickSynth.triggerAttackRelease("32n");
+            }
+
+            playReload() {
+                if (this.muted || !this.initialized) return;
+                const now = Tone.now();
+                this.clickSynth.triggerAttackRelease("32n", now);
+                this.clickSynth.triggerAttackRelease("32n", now + 0.25);
+                this.clickSynth.triggerAttackRelease("16n", now + 0.65);
+            }
+
+            playHit(isCrit) {
+                if (this.muted || !this.initialized) return;
+                if (isCrit) {
+                    this.chimeSynth.triggerAttackRelease(["E5", "B5", "E6"], "16n");
+                } else {
+                    this.chimeSynth.triggerAttackRelease(["A4", "E5"], "16n");
+                }
+            }
+
+            playPenalty() {
+                if (this.muted || !this.initialized) return;
+                this.chimeSynth.triggerAttackRelease(["F2", "B2"], "4n");
+            }
+        }
+
+        const audio = new SoundEngine();
+
+        // ==========================================
+        // 2. GAME STATE & CONFIGURATION
+        // ==========================================
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+
+        const CONFIG = {
+            GAME_DURATION: 60,
+            MAX_AMMO: 5,
+            RELOAD_TIME: 1.1, // seconds
+            GRAVITY: 260,     // bullet drop acceleration
+            WIND_SCALE: 28    // horizontal wind drift multiplier
+        };
+
+        const state = {
+            running: false,
+            score: 0,
+            combo: 1.0,
+            timeLeft: CONFIG.GAME_DURATION,
+            ammo: CONFIG.MAX_AMMO,
+            reloading: false,
+            reloadProgress: 0,
+            focused: false, // Zoom / steady aim mode
+            wind: 0,        // -5 to +5 knots
+            windTarget: 0,
+            shotsFired: 0,
+            shotsHit: 0,
+            crits: 0,
+            penalties: 0,
+            pointer: { x: 0, y: 0, active: false },
+            recoilOffset: 0,
+            screenShake: 0,
+            animals: [],
+            projectiles: [],
+            particles: [],
+            floatingTexts: [],
+            clouds: [],
+            spawnTimer: 0,
+            lastFrameTime: 0
+        };
+
+        // ==========================================
+        // 3. CANVAS RESIZING & RESPONSIVENESS
+        // ==========================================
+        function resizeCanvas() {
+            const wrapper = document.getElementById('game-wrapper');
+            const rect = wrapper.getBoundingClientRect();
+            const dpr = window.devicePixelRatio || 1;
+            canvas.width = rect.width * dpr;
+            canvas.height = rect.height * dpr;
+            ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+            if (!state.pointer.active) {
+                state.pointer.x = rect.width / 2;
+                state.pointer.y = rect.height / 2;
+            }
+        }
+        window.addEventListener('resize', resizeCanvas);
+
+        // ==========================================
+        // 4. ENTITY DEFINITIONS (Animals & Bullets)
+        // ==========================================
+        const SPECIES = {
+            BOAR: {
+                name: 'Wild Boar',
+                points: 100,
+                speedRange: [90, 145],
+                width: 74,
+                height: 44,
+                lane: 'ground_near',
+                protected: false,
+                color: '#4a3525',
+                accent: '#2c1e14'
+            },
+            STAG: {
+                name: 'Golden Stag',
+                points: 150,
+                speedRange: [130, 195],
+                width: 82,
+                height: 68,
+                lane: 'ground_far',
+                protected: false,
+                color: '#b4692e',
+                accent: '#7c4217'
+            },
+            PHEASANT: {
+                name: 'Swift Pheasant',
+                points: 250,
+                speedRange: [170, 240],
+                width: 54,
+                height: 30,
+                lane: 'sky',
+                protected: false,
+                color: '#047857',
+                accent: '#d97706'
+            },
+            FAWN: {
+                name: 'Protected Fawn',
+                points: -300,
+                speedRange: [75, 115],
+                width: 54,
+                height: 44,
+                lane: 'ground_near',
+                protected: true,
+                color: '#eab308',
+                accent: '#fef08a'
+            }
+        };
+
+        function spawnAnimal(logicalWidth, logicalHeight) {
+            // Weighted selection
+            const rand = Math.random();
+            let typeKey = 'BOAR';
+            if (rand < 0.35) typeKey = 'BOAR';
+            else if (rand < 0.65) typeKey = 'STAG';
+            else if (rand < 0.85) typeKey = 'PHEASANT';
+            else typeKey = 'FAWN';
+
+            const spec = SPECIES[typeKey];
+            const dir = Math.random() < 0.5 ? 1 : -1;
+            const speed = (spec.speedRange[0] + Math.random() * (spec.speedRange[1] - spec.speedRange[0])) * dir;
+
+            // Depth / Lane positioning
+            let y = logicalHeight * 0.78;
+            let depthScale = 1.0;
+
+            if (spec.lane === 'ground_near') {
+                y = logicalHeight * (0.76 + Math.random() * 0.08);
+                depthScale = 1.0;
+            } else if (spec.lane === 'ground_far') {
+                y = logicalHeight * (0.62 + Math.random() * 0.05);
+                depthScale = 0.78;
+            } else if (spec.lane === 'sky') {
+                y = logicalHeight * (0.18 + Math.random() * 0.25);
+                depthScale = 0.85;
+            }
+
+            const w = spec.width * depthScale;
+            const h = spec.height * depthScale;
+            const x = dir === 1 ? -w - 20 : logicalWidth + 20;
+
+            state.animals.push({
+                type: typeKey,
+                spec,
+                x,
+                y,
+                w,
+                h,
+                dir,
+                speed,
+                depthScale,
+                animPhase: Math.random() * Math.PI * 2,
+                hit: false
+            });
+        }
+
+        // ==========================================
+        // 5. SHOOTING & BALLISTICS LOGIC
+        // ==========================================
+        function fireWeapon() {
+            if (!state.running) return;
+
+            if (state.reloading) {
+                audio.playDryFire();
+                return;
+            }
+
+            if (state.ammo <= 0) {
+                audio.playDryFire();
+                triggerReload();
+                return;
+            }
+
+            // Consume round
+            state.ammo--;
+            state.shotsFired++;
+            state.recoilOffset = 18;
+            state.screenShake = 6;
+            updateAmmoUI();
+            audio.playGunshot();
+
+            const rect = canvas.getBoundingClientRect();
+            const startX = rect.width * 0.5;
+            const startY = rect.height + 10;
+
+            // Target coordinates
+            const targetX = state.pointer.x;
+            const targetY = state.pointer.y;
+
+            // Calculate distance factor (higher on screen = further away)
+            const distanceFactor = Math.max(0.35, 1.15 - (targetY / rect.height) * 0.85);
+            const flightTime = 0.14 + distanceFactor * 0.22; // fast rifle round
+
+            state.projectiles.push({
+                startX,
+                startY,
+                targetX,
+                targetY,
+                x: startX,
+                y: startY,
+                elapsed: 0,
+                flightTime,
+                distanceFactor,
+                windAtShot: state.wind
+            });
+
+            // Auto reload on empty
+            if (state.ammo === 0) {
+                setTimeout(() => {
+                    if (state.running && state.ammo === 0 && !state.reloading) {
+                        triggerReload();
+                    }
+                }, 350);
+            }
+        }
+
+        function triggerReload() {
+            if (!state.running || state.reloading || state.ammo === CONFIG.MAX_AMMO) return;
+            state.reloading = true;
+            state.reloadProgress = 0;
+            document.getElementById('reload-status').classList.remove('hidden');
+            audio.playReload();
+        }
+
+        function evaluateImpact(impactX, impactY) {
+            // Spawn dust/impact puff
+            createParticles(impactX, impactY, '#d6d3d1', 8);
+
+            // Check hits from front-most (highest Y) to back-most
+            const sortedAnimals = [...state.animals].sort((a, b) => b.y - a.y);
+
+            for (let animal of sortedAnimals) {
+                if (animal.hit) continue;
+
+                // Hitbox bounds
+                const left = animal.x - animal.w * 0.5;
+                const right = animal.x + animal.w * 0.5;
+                const top = animal.y - animal.h;
+                const bottom = animal.y;
+
+                if (impactX >= left && impactX <= right && impactY >= top && impactY <= bottom) {
+                    animal.hit = true;
+
+                    // Protected species check
+                    if (animal.spec.protected) {
+                        state.score = Math.max(0, state.score + animal.spec.points);
+                        state.combo = 1.0;
+                        state.penalties++;
+                        state.screenShake = 14;
+                        audio.playPenalty();
+                        createParticles(impactX, impactY, '#f43f5e', 22);
+                        addFloatingText(impactX, impactY - 20, `PROTECTED! ${animal.spec.points}`, '#fb7185', 20);
+                        updateHUD();
+                        return;
+                    }
+
+                    // Valid target hit! Check headshot zone (front 30% of body & upper 55%)
+                    const headCenterX = animal.dir === 1 ? right - animal.w * 0.2 : left + animal.w * 0.2;
+                    const headCenterY = top + animal.h * 0.32;
+                    const distToHead = Math.hypot(impactX - headCenterX, impactY - headCenterY);
+                    const isCrit = distToHead <= animal.w * 0.26;
+
+                    state.shotsHit++;
+                    if (isCrit) state.crits++;
+
+                    const basePts = animal.spec.points * (isCrit ? 2 : 1);
+                    const earned = Math.round(basePts * state.combo);
+                    state.score += earned;
+                    state.combo = Math.min(4.0, +(state.combo + 0.25).toFixed(2));
+
+                    audio.playHit(isCrit);
+                    createParticles(impactX, impactY, isCrit ? '#fbbf24' : '#ef4444', isCrit ? 24 : 14);
+                    addFloatingText(
+                        impactX,
+                        impactY - 25,
+                        isCrit ? `CRITICAL! +${earned}` : `+${earned}`,
+                        isCrit ? '#fcd34d' : '#ffffff',
+                        isCrit ? 21 : 17
+                    );
+
+                    updateHUD();
+                    return;
+                }
+            }
+
+            // Missed shot resets combo
+            if (state.combo > 1.0) {
+                state.combo = 1.0;
+                addFloatingText(impactX, impactY - 15, 'MISS - COMBO RESET', '#9ca3af', 13);
+                updateHUD();
+            }
+        }
+
+        // ==========================================
+        // 6. VISUAL EFFECTS & RENDERING
+        // ==========================================
+        function createParticles(x, y, color, count) {
+            for (let i = 0; i < count; i++) {
+                const angle = Math.random() * Math.PI * 2;
+                const speed = 40 + Math.random() * 140;
+                state.particles.push({
+                    x,
+                    y,
+                    vx: Math.cos(angle) * speed,
+                    vy: Math.sin(angle) * speed - 40,
+                    life: 0.4 + Math.random() * 0.35,
+                    maxLife: 0.75,
+                    size: 2.5 + Math.random() * 3.5,
+                    color
+                });
+            }
+        }
+
+        function addFloatingText(x, y, text, color, size = 16) {
+            state.floatingTexts.push({
+                x,
+                y,
+                text,
+                color,
+                size,
+                life: 1.1
+            });
+        }
+
+        function drawEnvironment(w, h, time) {
+            // Golden Hour Savanna Sky Gradient
+            const skyGrad = ctx.createLinearGradient(0, 0, 0, h * 0.65);
+            skyGrad.addColorStop(0, '#1e3a5f');
+            skyGrad.addColorStop(0.45, '#c26d38');
+            skyGrad.addColorStop(1, '#f6ad55');
+            ctx.fillStyle = skyGrad;
+            ctx.fillRect(0, 0, w, h);
+
+            // Setting Sun
+            const sunX = w * 0.76;
+            const sunY = h * 0.44;
+            const sunGlow = ctx.createRadialGradient(sunX, sunY, 10, sunX, sunY, 140);
+            sunGlow.addColorStop(0, 'rgba(255, 251, 235, 0.95)');
+            sunGlow.addColorStop(0.3, 'rgba(253, 224, 71, 0.45)');
+            sunGlow.addColorStop(1, 'rgba(245, 158, 11, 0)');
+            ctx.fillStyle = sunGlow;
+            ctx.beginPath();
+            ctx.arc(sunX, sunY, 140, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Drifting Clouds (affected by wind!)
+            ctx.fillStyle = 'rgba(255, 237, 213, 0.22)';
+            for (let c of state.clouds) {
+                ctx.beginPath();
+                ctx.ellipse(c.x, c.y, c.w, c.h, 0, 0, Math.PI * 2);
+                ctx.fill();
+            }
+
+            // Distant Mountain Ridge
+            ctx.fillStyle = '#5c3a2e';
+            ctx.beginPath();
+            ctx.moveTo(0, h * 0.56);
+            ctx.lineTo(w * 0.18, h * 0.44);
+            ctx.lineTo(w * 0.36, h * 0.52);
+            ctx.lineTo(w * 0.58, h * 0.41);
+            ctx.lineTo(w * 0.82, h * 0.50);
+            ctx.lineTo(w, h * 0.43);
+            ctx.lineTo(w, h * 0.65);
+            ctx.lineTo(0, h * 0.65);
+            ctx.closePath();
+            ctx.fill();
+
+            // Mid-ground Savanna Hills
+            const midHillGrad = ctx.createLinearGradient(0, h * 0.52, 0, h * 0.72);
+            midHillGrad.addColorStop(0, '#784b2a');
+            midHillGrad.addColorStop(1, '#4d3319');
+            ctx.fillStyle = midHillGrad;
+            ctx.beginPath();
+            ctx.moveTo(0, h * 0.58);
+            ctx.quadraticCurveTo(w * 0.3, h * 0.50, w * 0.65, h * 0.57);
+            ctx.quadraticCurveTo(w * 0.85, h * 0.61, w, h * 0.55);
+            ctx.lineTo(w, h * 0.75);
+            ctx.lineTo(0, h * 0.75);
+            ctx.closePath();
+            ctx.fill();
+
+            // Stylized Acacia Trees on Horizon
+            drawAcaciaTree(w * 0.14, h * 0.56, 0.85);
+            drawAcaciaTree(w * 0.86, h * 0.57, 1.05);
+
+            // Foreground Grassland
+            const fgGrad = ctx.createLinearGradient(0, h * 0.64, 0, h);
+            fgGrad.addColorStop(0, '#3f5222');
+            fgGrad.addColorStop(0.5, '#2b3a16');
+            fgGrad.addColorStop(1, '#1a240d');
+            ctx.fillStyle = fgGrad;
+            ctx.fillRect(0, h * 0.64, w, h * 0.36);
+
+            // Wind-swaying grass blades
+            ctx.strokeStyle = '#536b2c';
+            ctx.lineWidth = 2;
+            const sway = Math.sin(time * 3) * 4 + state.wind * 2.5;
+            for (let gx = 15; gx < w; gx += 38) {
+                const gy = h * 0.68 + ((gx * 17) % (h * 0.28));
+                ctx.beginPath();
+                ctx.moveTo(gx, gy);
+                ctx.quadraticCurveTo(gx + sway * 0.5, gy - 10, gx + sway, gy - 18);
+                ctx.stroke();
+            }
+        }
+
+        function drawAcaciaTree(x, y, scale) {
+            ctx.save();
+            ctx.translate(x, y);
+            ctx.scale(scale, scale);
+            ctx.fillStyle = '#261710';
+            // Trunk & branches
+            ctx.beginPath();
+            ctx.moveTo(-5, 0);
+            ctx.lineTo(-2, -35);
+            ctx.lineTo(-28, -55);
+            ctx.lineTo(-24, -58);
+            ctx.lineTo(0, -40);
+            ctx.lineTo(24, -56);
+            ctx.lineTo(28, -53);
+            ctx.lineTo(3, -35);
+            ctx.lineTo(6, 0);
+            ctx.closePath();
+            ctx.fill();
+            // Flat canopy
+            ctx.beginPath();
+            ctx.ellipse(0, -58, 52, 11, 0, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.restore();
+        }
+
+        function drawAnimal(animal) {
+            ctx.save();
+            const bob = Math.abs(Math.sin(animal.animPhase)) * 5 * animal.depthScale;
+            ctx.translate(animal.x, animal.y - bob);
+            ctx.scale(animal.dir * animal.depthScale, animal.depthScale);
+
+            const { type, spec } = animal;
+            const legSwing = Math.sin(animal.animPhase) * 10;
+
+            if (type === 'BOAR') {
+                // Legs
+                ctx.strokeStyle = spec.accent;
+                ctx.lineWidth = 5;
+                ctx.beginPath();
+                ctx.moveTo(-18, -12); ctx.lineTo(-18 + legSwing, 0);
+                ctx.moveTo(18, -12); ctx.lineTo(18 - legSwing, 0);
+                ctx.stroke();
+
+                // Heavy Body
+                ctx.fillStyle = spec.color;
+                ctx.beginPath();
+                ctx.ellipse(0, -22, 34, 18, 0, 0, Math.PI * 2);
+                ctx.fill();
+
+                // Snout & Head
+                ctx.beginPath();
+                ctx.ellipse(28, -20, 14, 11, 0.2, 0, Math.PI * 2);
+                ctx.fill();
+
+                // Ivory Tusk
+                ctx.strokeStyle = '#fef3c7';
+                ctx.lineWidth = 3;
+                ctx.beginPath();
+                ctx.moveTo(34, -15);
+                ctx.quadraticCurveTo(44, -15, 42, -24);
+                ctx.stroke();
+
+                // Eye
+                ctx.fillStyle = '#fde047';
+                ctx.beginPath();
+                ctx.arc(28, -24, 2.2, 0, Math.PI * 2);
+                ctx.fill();
+
+            } else if (type === 'STAG') {
+                // Slender Legs
+                ctx.strokeStyle = spec.accent;
+                ctx.lineWidth = 4;
+                ctx.beginPath();
+                ctx.moveTo(-20, -24); ctx.lineTo(-22 + legSwing * 1.3, 0);
+                ctx.moveTo(20, -24); ctx.lineTo(22 - legSwing * 1.3, 0);
+                ctx.stroke();
+
+                // Torso & Neck
+                ctx.fillStyle = spec.color;
+                ctx.beginPath();
+                ctx.ellipse(0, -32, 32, 14, 0, 0, Math.PI * 2);
+                ctx.fill();
+
+                ctx.beginPath();
+                ctx.moveTo(20, -34);
+                ctx.lineTo(32, -56);
+                ctx.lineTo(22, -56);
+                ctx.lineTo(12, -34);
+                ctx.fill();
+
+                // Head
+                ctx.beginPath();
+                ctx.ellipse(32, -56, 11, 6, 0.1, 0, Math.PI * 2);
+                ctx.fill();
+
+                // Majestic Antlers
+                ctx.strokeStyle = '#fef3c7';
+                ctx.lineWidth = 2.5;
+                ctx.beginPath();
+                ctx.moveTo(26, -60);
+                ctx.lineTo(18, -76);
+                ctx.moveTo(22, -68);
+                ctx.lineTo(30, -74);
+                ctx.stroke();
+
+            } else if (type === 'PHEASANT') {
+                const wingFlap = Math.sin(animal.animPhase * 2.2) * 14;
+                // Tail feathers
+                ctx.fillStyle = '#b45309';
+                ctx.beginPath();
+                ctx.moveTo(-14, -14);
+                ctx.lineTo(-42, -18);
+                ctx.lineTo(-14, -10);
+                ctx.fill();
+
+                // Body
+                ctx.fillStyle = spec.color;
+                ctx.beginPath();
+                ctx.ellipse(0, -14, 18, 9, -0.1, 0, Math.PI * 2);
+                ctx.fill();
+
+                // Head & Beak
+                ctx.fillStyle = '#065f46';
+                ctx.beginPath();
+                ctx.arc(18, -18, 6, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.fillStyle = '#fbbf24';
+                ctx.beginPath();
+                ctx.moveTo(23, -19); ctx.lineTo(30, -17); ctx.lineTo(23, -15);
+                ctx.fill();
+
+                // Flapping Wing
+                ctx.fillStyle = spec.accent;
+                ctx.beginPath();
+                ctx.moveTo(-4, -15);
+                ctx.lineTo(8, -15);
+                ctx.lineTo(0, -15 - wingFlap);
+                ctx.closePath();
+                ctx.fill();
+
+            } else if (type === 'FAWN') {
+                // Protected Baby Fawn with Green Conservation Collar
+                ctx.strokeStyle = '#ca8a04';
+                ctx.lineWidth = 3.5;
+                ctx.beginPath();
+                ctx.moveTo(-13, -16); ctx.lineTo(-13 + legSwing, 0);
+                ctx.moveTo(13, -16); ctx.lineTo(13 - legSwing, 0);
+                ctx.stroke();
+
+                ctx.fillStyle = spec.color;
+                ctx.beginPath();
+                ctx.ellipse(0, -22, 22, 11, 0, 0, Math.PI * 2);
+                ctx.fill();
+
+                // White spots
+                ctx.fillStyle = spec.accent;
+                ctx.beginPath();
+                ctx.arc(-6, -24, 2, 0, Math.PI * 2);
+                ctx.arc(4, -25, 2, 0, Math.PI * 2);
+                ctx.arc(0, -20, 2, 0, Math.PI * 2);
+                ctx.fill();
+
+                // Neck & Head
+                ctx.fillStyle = spec.color;
+                ctx.beginPath();
+                ctx.ellipse(18, -34, 8, 6, 0, 0, Math.PI * 2);
+                ctx.fill();
+
+                // Bright Emerald Conservation Collar (Visual rule indicator)
+                ctx.strokeStyle = '#10b981';
+                ctx.lineWidth = 4;
+                ctx.beginPath();
+                ctx.moveTo(11, -26);
+                ctx.lineTo(19, -29);
+                ctx.stroke();
+            }
+
+            ctx.restore();
+        }
+
+        function drawCrosshair(w, h) {
+            const { x, y } = state.pointer;
+            const radius = state.focused ? 24 : 34;
+
+            // Vignette when focused (Scope zoom effect)
+            if (state.focused && state.running) {
+                const grad = ctx.createRadialGradient(x, y, radius * 2.2, x, y, Math.max(w, h) * 0.7);
+                grad.addColorStop(0, 'rgba(0,0,0,0)');
+                grad.addColorStop(1, 'rgba(10, 8, 6, 0.72)');
+                ctx.fillStyle = grad;
+                ctx.fillRect(0, 0, w, h);
+            }
+
+            ctx.save();
+            ctx.translate(x, y - state.recoilOffset);
+
+            // Outer reticle ring
+            ctx.strokeStyle = state.reloading ? 'rgba(251, 191, 36, 0.6)' : 'rgba(255, 255, 255, 0.9)';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.arc(0, 0, radius, 0, Math.PI * 2);
+            ctx.stroke();
+
+            // Reload progress arc
+            if (state.reloading) {
+                ctx.strokeStyle = '#f59e0b';
+                ctx.lineWidth = 4;
+                ctx.beginPath();
+                ctx.arc(0, 0, radius + 5, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * state.reloadProgress);
+                ctx.stroke();
+            }
+
+            // Crosshair mil-dots / lines
+            ctx.beginPath();
+            ctx.moveTo(-radius - 10, 0); ctx.lineTo(-8, 0);
+            ctx.moveTo(8, 0); ctx.lineTo(radius + 10, 0);
+            ctx.moveTo(0, -radius - 10); ctx.lineTo(0, -8);
+            ctx.moveTo(0, 8); ctx.lineTo(0, radius + 10);
+            ctx.stroke();
+
+            // Center dot
+            ctx.fillStyle = '#ef4444';
+            ctx.beginPath();
+            ctx.arc(0, 0, 2.5, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Ballistic Wind Compensation Indicator Dot (Helps player aim logically!)
+            const distEst = Math.max(0.35, 1.15 - (y / h) * 0.85);
+            const estWindDrift = state.wind * CONFIG.WIND_SCALE * distEst * 0.35;
+            ctx.fillStyle = 'rgba(56, 189, 248, 0.75)';
+            ctx.beginPath();
+            ctx.arc(estWindDrift, 4, 2, 0, Math.PI * 2);
+            ctx.fill();
+
+            ctx.restore();
+        }
+
+        // ==========================================
+        // 7. MAIN GAME LOOP
+        // ==========================================
+        function update(dt) {
+            const rect = canvas.getBoundingClientRect();
+            const w = rect.width;
+            const h = rect.height;
+
+            // Clouds always drift
+            for (let c of state.clouds) {
+                c.x += (12 + state.wind * 4) * dt;
+                if (c.x - c.w > w) c.x = -c.w;
+                if (c.x + c.w < 0) c.x = w + c.w;
+            }
+
+            if (!state.running) return;
+
+            // Timer countdown
+            state.timeLeft -= dt;
+            if (state.timeLeft <= 0) {
+                state.timeLeft = 0;
+                endGame();
+                return;
+            }
+
+            // Smooth wind shifts
+            if (Math.random() < dt * 0.25) {
+                state.windTarget = +(Math.random() * 10 - 5).toFixed(1);
+            }
+            state.wind += (state.windTarget - state.wind) * dt * 0.8;
+
+            // Reload progression
+            if (state.reloading) {
+                state.reloadProgress += dt / CONFIG.RELOAD_TIME;
+                if (state.reloadProgress >= 1) {
+                    state.reloading = false;
+                    state.reloadProgress = 0;
+                    state.ammo = CONFIG.MAX_AMMO;
+                    document.getElementById('reload-status').classList.add('hidden');
+                    updateAmmoUI();
+                }
+            }
+
+            // Recoil & Screen shake decay
+            state.recoilOffset = Math.max(0, state.recoilOffset - dt * 65);
+            state.screenShake = Math.max(0, state.screenShake - dt * 35);
+
+            // Spawn animals
+            state.spawnTimer -= dt;
+            if (state.spawnTimer <= 0 && state.animals.length < 7) {
+                spawnAnimal(w, h);
+                state.spawnTimer = 0.85 + Math.random() * 0.9;
+            }
+
+            // Update animals
+            for (let i = state.animals.length - 1; i >= 0; i--) {
+                const a = state.animals[i];
+                a.x += a.speed * dt;
+                a.animPhase += dt * (Math.abs(a.speed) * 0.08);
+
+                if (a.hit || (a.dir === 1 && a.x - a.w > w + 40) || (a.dir === -1 && a.x + a.w < -40)) {
+                    state.animals.splice(i, 1);
+                }
+            }
+
+            // Update projectiles (Ballistic trajectory with wind & slight drop)
+            for (let i = state.projectiles.length - 1; i >= 0; i--) {
+                const p = state.projectiles[i];
+                p.elapsed += dt;
+                const t = Math.min(1, p.elapsed / p.flightTime);
+
+                const windDrift = p.windAtShot * CONFIG.WIND_SCALE * p.distanceFactor * (t * t) * 0.35;
+                const drop = 0.5 * CONFIG.GRAVITY * (p.elapsed * p.elapsed) * p.distanceFactor * 0.25;
+
+                p.x = p.startX + (p.targetX - p.startX) * t + windDrift;
+                p.y = p.startY + (p.targetY - p.startY) * t + drop;
+
+                if (t >= 1) {
+                    evaluateImpact(p.x, p.y);
+                    state.projectiles.splice(i, 1);
+                }
+            }
+
+            // Update particles
+            for (let i = state.particles.length - 1; i >= 0; i--) {
+                const pt = state.particles[i];
+                pt.x += pt.vx * dt;
+                pt.y += pt.vy * dt;
+                pt.vy += 240 * dt;
+                pt.life -= dt;
+                if (pt.life <= 0) state.particles.splice(i, 1);
+            }
+
+            // Update floating combat texts
+            for (let i = state.floatingTexts.length - 1; i >= 0; i--) {
+                const ft = state.floatingTexts[i];
+                ft.y -= 36 * dt;
+                ft.life -= dt;
+                if (ft.life <= 0) state.floatingTexts.splice(i, 1);
+            }
+
+            updateHUD();
+        }
+
+        function render(timestamp) {
+            const rect = canvas.getBoundingClientRect();
+            const w = rect.width;
+            const h = rect.height;
+
+            ctx.save();
+            // Screen shake transform
+            if (state.screenShake > 0) {
+                const sx = (Math.random() - 0.5) * state.screenShake;
+                const sy = (Math.random() - 0.5) * state.screenShake;
+                ctx.translate(sx, sy);
+            }
+
+            drawEnvironment(w, h, timestamp * 0.001);
+
+            // Render animals back-to-front by Y depth
+            const renderOrder = [...state.animals].sort((a, b) => a.y - b.y);
+            for (let a of renderOrder) {
+                drawAnimal(a);
+            }
+
+            // Render bullet tracers
+            for (let p of state.projectiles) {
+                ctx.fillStyle = '#fef08a';
+                ctx.beginPath();
+                ctx.arc(p.x, p.y, 3.5, 0, Math.PI * 2);
+                ctx.fill();
+            }
+
+            // Render particles
+            for (let pt of state.particles) {
+                ctx.globalAlpha = Math.max(0, pt.life / pt.maxLife);
+                ctx.fillStyle = pt.color;
+                ctx.beginPath();
+                ctx.arc(pt.x, pt.y, pt.size, 0, Math.PI * 2);
+                ctx.fill();
+            }
+            ctx.globalAlpha = 1;
+
+            // Render floating score texts
+            for (let ft of state.floatingTexts) {
+                ctx.globalAlpha = Math.min(1, ft.life * 1.4);
+                ctx.font = `800 ${ft.size}px Inter, sans-serif`;
+                ctx.textAlign = 'center';
+                ctx.fillStyle = '#000000';
+                ctx.fillText(ft.text, ft.x + 1.5, ft.y + 1.5);
+                ctx.fillStyle = ft.color;
+                ctx.fillText(ft.text, ft.x, ft.y);
+            }
+            ctx.globalAlpha = 1;
+
+            // Render Rifle Barrel silhouette at bottom
+            drawRifleBarrel(w, h);
+
+            // Render Crosshair
+            drawCrosshair(w, h);
+
+            ctx.restore();
+        }
+
+        function drawRifleBarrel(w, h) {
+            const aimRatio = (state.pointer.x / w) - 0.5;
+            const barrelBaseX = w * 0.5 + aimRatio * 90;
+            const recoilY = state.recoilOffset * 1.2;
+
+            ctx.save();
+            ctx.translate(barrelBaseX, h + recoilY);
+            ctx.rotate(aimRatio * 0.35);
+
+            // Rifle stock & barrel
+            ctx.fillStyle = '#1c1917';
+            ctx.beginPath();
+            ctx.moveTo(-14, 10);
+            ctx.lineTo(-7, -75);
+            ctx.lineTo(7, -75);
+            ctx.lineTo(14, 10);
+            ctx.closePath();
+            ctx.fill();
+
+            // Metallic highlight
+            ctx.fillStyle = '#57534e';
+            ctx.fillRect(-2, -75, 4, 80);
+
+            // Muzzle flash on recent shot
+            if (state.recoilOffset > 13) {
+                ctx.fillStyle = 'rgba(253, 224, 71, 0.85)';
+                ctx.beginPath();
+                ctx.arc(0, -82, 22, 0, Math.PI * 2);
+                ctx.fill();
+            }
+
+            ctx.restore();
+        }
+
+        function gameLoop(timestamp) {
+            if (!state.lastFrameTime) state.lastFrameTime = timestamp;
+            const dt = Math.min(0.05, (timestamp - state.lastFrameTime) / 1000);
+            state.lastFrameTime = timestamp;
+
+            update(dt);
+            render(timestamp);
+            requestAnimationFrame(gameLoop);
+        }
+
+        // ==========================================
+        // 8. UI & CONTROLS BINDING
+        // ==========================================
+        function updateHUD() {
+            document.getElementById('hud-score').textContent = state.score.toLocaleString();
+            document.getElementById('hud-combo').textContent = `x${state.combo.toFixed(2)}`;
+            document.getElementById('hud-time').textContent = `${Math.ceil(state.timeLeft)}s`;
+
+            const timeEl = document.getElementById('hud-time');
+            if (state.timeLeft <= 10) {
+                timeEl.classList.remove('text-emerald-400');
+                timeEl.classList.add('text-rose-500');
+            } else {
+                timeEl.classList.add('text-emerald-400');
+                timeEl.classList.remove('text-rose-500');
+            }
+
+            const windAbs = Math.abs(state.wind).toFixed(1);
+            document.getElementById('hud-wind-val').textContent = `${windAbs} kt`;
+            document.getElementById('hud-wind-arrow').textContent = state.wind > 0.2 ? '→' : (state.wind < -0.2 ? '←' : '•');
+        }
+
+        function updateAmmoUI() {
+            const container = document.getElementById('ammo-container');
+            container.innerHTML = '';
+            for (let i = 0; i < CONFIG.MAX_AMMO; i++) {
+                const active = i < state.ammo;
+                const shell = document.createElement('div');
+                shell.className = `w-3.5 h-7 rounded-t-full border transition-all ${
+                    active
+                        ? 'bg-gradient-to-b from-amber-300 via-amber-500 to-amber-700 border-amber-200 shadow-sm'
+                        : 'bg-stone-800 border-stone-700 opacity-40'
+                }`;
+                container.appendChild(shell);
+            }
+        }
+
+        function startGame() {
+            audio.init();
+            state.running = true;
+            state.score = 0;
+            state.combo = 1.0;
+            state.timeLeft = CONFIG.GAME_DURATION;
+            state.ammo = CONFIG.MAX_AMMO;
+            state.reloading = false;
+            state.reloadProgress = 0;
+            state.shotsFired = 0;
+            state.shotsHit = 0;
+            state.crits = 0;
+            state.penalties = 0;
+            state.animals = [];
+            state.projectiles = [];
+            state.particles = [];
+            state.floatingTexts = [];
+            state.wind = +(Math.random() * 6 - 3).toFixed(1);
+            state.windTarget = state.wind;
+
+            document.getElementById('start-overlay').classList.add('hidden');
+            document.getElementById('gameover-overlay').classList.add('hidden');
+            document.getElementById('reload-status').classList.add('hidden');
+
+            updateHUD();
+            updateAmmoUI();
+        }
+
+        function endGame() {
+            state.running = false;
+            state.focused = false;
+            const accuracy = state.shotsFired > 0 ? Math.round((state.shotsHit / state.shotsFired) * 100) : 0;
+
+            document.getElementById('end-score').textContent = state.score.toLocaleString();
+            document.getElementById('end-accuracy').textContent = `${accuracy}%`;
+            document.getElementById('end-crits').textContent = state.crits;
+            document.getElementById('end-penalties').textContent = state.penalties;
+            document.getElementById('gameover-overlay').classList.remove('hidden');
+        }
+
+        // Pointer & Touch Events on Canvas
+        function updatePointerPos(clientX, clientY) {
+            const rect = canvas.getBoundingClientRect();
+            state.pointer.x = Math.max(0, Math.min(rect.width, clientX - rect.left));
+            state.pointer.y = Math.max(0, Math.min(rect.height, clientY - rect.top));
+            state.pointer.active = true;
+        }
+
+        canvas.addEventListener('mousemove', (e) => {
+            updatePointerPos(e.clientX, e.clientY);
+        });
+
+        canvas.addEventListener('mousedown', (e) => {
+            if (!state.running) return;
+            updatePointerPos(e.clientX, e.clientY);
+            if (e.button === 2) {
+                state.focused = !state.focused;
+            } else if (e.button === 0) {
+                fireWeapon();
+            }
+        });
+
+        canvas.addEventListener('contextmenu', (e) => e.preventDefault());
+
+        // Touch support for mobile/tablet
+        canvas.addEventListener('touchstart', (e) => {
+            if (!state.running) return;
+            e.preventDefault();
+            const touch = e.touches[0];
+            updatePointerPos(touch.clientX, touch.clientY);
+            fireWeapon();
+        }, { passive: false });
+
+        canvas.addEventListener('touchmove', (e) => {
+            if (!state.running) return;
+            e.preventDefault();
+            const touch = e.touches[0];
+            updatePointerPos(touch.clientX, touch.clientY);
+        }, { passive: false });
+
+        // Keyboard Shortcuts
+        window.addEventListener('keydown', (e) => {
+            if (e.code === 'KeyR') triggerReload();
+            if (e.code === 'ShiftLeft' || e.code === 'ShiftRight') state.focused = true;
+        });
+
+        window.addEventListener('keyup', (e) => {
+            if (e.code === 'ShiftLeft' || e.code === 'ShiftRight') state.focused = false;
+        });
+
+        // UI Button Listeners
+        document.getElementById('btn-start').addEventListener('click', startGame);
+        document.getElementById('btn-restart').addEventListener('click', startGame);
+        document.getElementById('btn-reload').addEventListener('click', triggerReload);
+        document.getElementById('btn-scope').addEventListener('click', () => {
+            state.focused = !state.focused;
+        });
+        document.getElementById('btn-mute').addEventListener('click', (e) => {
+            audio.muted = !audio.muted;
+            e.currentTarget.textContent = audio.muted ? '🔇' : '🔊';
+        });
+
+        // Initialize environment & loop on load
+        window.onload = function () {
+            resizeCanvas();
+            updateAmmoUI();
+            const rect = canvas.getBoundingClientRect();
+            for (let i = 0; i < 5; i++) {
+                state.clouds.push({
+                    x: Math.random() * rect.width,
+                    y: 35 + Math.random() * (rect.height * 0.25),
+                    w: 55 + Math.random() * 65,
+                    h: 16 + Math.random() * 12
+                });
+            }
+            requestAnimationFrame(gameLoop);
+        };
+    </script>
+</body>
+</html>
